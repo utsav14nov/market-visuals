@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { NewsItem } from './types';
-import { fetchStockNews, generateNewsImage } from './services/geminiService';
+import { fetchStockNews } from './services/newsApiService';
 import NewsPost from './components/NewsPost';
 import Header from './components/Header';
 import LoadingSpinner from './components/LoadingSpinner';
@@ -14,43 +14,30 @@ const App: React.FC = () => {
   const initialLoadDone = useRef(false);
 
   const loadNews = useCallback(async () => {
+    if (import.meta.env.DEV) {
+      console.log('Loading news...');
+    }
     if (isFetchingMore) return;
     
     setIsFetchingMore(true);
     setError(null);
     try {
-      const newNewsItems = await fetchStockNews(5);
-      const itemsWithLoadingState = newNewsItems.map(item => ({
-        ...item,
-        id: `${item.ticker}-${Math.random()}`,
-        imageUrl: '',
-        imageIsLoading: true,
+      const currentOffset = newsFeed.length;
+      const newNewsItems = await fetchStockNews(10, currentOffset);
+      const itemsWithIds: NewsItem[] = newNewsItems.map(item => ({
+        id: `news-${item.id}-${Math.random()}`,
+        headline: item.title,
+        ticker: item.source || 'MARKET', // Use source as ticker fallback
+        summary: item.description,
+        sentiment: item.sentiment_verdict,
+        sentimentScore: item.sentiment_score,
+        sourceUrl: item.url,
+        imagePrompt: '', // Not needed anymore but keeping for type compatibility
+        imageUrl: item.generated_image,
+        imageIsLoading: false,
       }));
 
-      setNewsFeed(prevFeed => [...prevFeed, ...itemsWithLoadingState]);
-
-      itemsWithLoadingState.forEach(async (item) => {
-        try {
-          const imageUrl = await generateNewsImage(item.imagePrompt);
-          setNewsFeed(prevFeed =>
-            prevFeed.map(feedItem =>
-              feedItem.id === item.id
-                ? { ...feedItem, imageUrl, imageIsLoading: false }
-                : feedItem
-            )
-          );
-        } catch (imgError) {
-          console.error(`Failed to generate image for ${item.ticker}:`, imgError);
-          setNewsFeed(prevFeed =>
-            prevFeed.map(feedItem =>
-              feedItem.id === item.id
-                ? { ...feedItem, imageIsLoading: false, imageUrl: 'https://picsum.photos/seed/error/1280/720' } // Fallback image 16:9
-                : feedItem
-            )
-          );
-        }
-      });
-
+      setNewsFeed(prevFeed => [...prevFeed, ...itemsWithIds]);
     } catch (err) {
       setError('Failed to fetch stock news. Please try again later.');
       console.error(err);
@@ -58,10 +45,13 @@ const App: React.FC = () => {
       setIsLoading(false);
       setIsFetchingMore(false);
     }
-  }, [isFetchingMore]);
+  }, [isFetchingMore, newsFeed.length]);
 
 
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('Initial load...');
+    }
     if (!initialLoadDone.current) {
         loadNews();
         initialLoadDone.current = true;
