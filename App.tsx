@@ -10,6 +10,8 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isFetchingMore, setIsFetchingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMoreData, setHasMoreData] = useState<boolean>(true);
+  const [backendOffset, setBackendOffset] = useState<number>(0);
   const feedContainerRef = useRef<HTMLDivElement>(null);
   const initialLoadDone = useRef(false);
 
@@ -17,25 +19,37 @@ const App: React.FC = () => {
     if (import.meta.env.DEV) {
       console.log('Loading news...');
     }
-    if (isFetchingMore) return;
+    if (isFetchingMore || !hasMoreData) return;
     
     setIsFetchingMore(true);
     setError(null);
     try {
-      const currentOffset = newsFeed.length;
-      const newNewsItems = await fetchStockNews(10, currentOffset);
-      const itemsWithIds: NewsItem[] = newNewsItems.map(item => ({
-        id: `news-${item.id}-${Math.random()}`,
-        headline: item.title,
-        ticker: item.source || 'MARKET', // Use source as ticker fallback
-        summary: item.description,
-        sentiment: item.sentiment_verdict,
-        sentimentScore: item.sentiment_score,
-        sourceUrl: item.url,
-        imagePrompt: '', // Not needed anymore but keeping for type compatibility
-        imageUrl: item.generated_image,
-        imageIsLoading: false,
-      }));
+      const newNewsItems = await fetchStockNews(10, backendOffset);
+      
+      // If API returns 0 records, we've reached the end
+      if (newNewsItems.length === 0) {
+        setHasMoreData(false);
+        return;
+      }
+      
+      // Next request offset = current offset + number of items returned by backend
+      setBackendOffset(prev => prev + newNewsItems.length);
+      
+      // Filter out items without generated_image before mapping
+      const itemsWithIds: NewsItem[] = newNewsItems
+        .filter(item => item.generated_image && item.generated_image.trim() !== '')
+        .map(item => ({
+          id: `news-${item.id}-${Math.random()}`,
+          headline: item.title,
+          ticker: item.source || 'MARKET', // Use source as ticker fallback
+          summary: item.description,
+          sentiment: item.sentiment_verdict,
+          sentimentScore: item.sentiment_score,
+          sourceUrl: item.url,
+          imagePrompt: '', // Not needed anymore but keeping for type compatibility
+          imageUrl: item.generated_image,
+          imageIsLoading: false,
+        }));
 
       setNewsFeed(prevFeed => [...prevFeed, ...itemsWithIds]);
     } catch (err) {
@@ -45,7 +59,7 @@ const App: React.FC = () => {
       setIsLoading(false);
       setIsFetchingMore(false);
     }
-  }, [isFetchingMore, newsFeed.length]);
+  }, [isFetchingMore, backendOffset, hasMoreData]);
 
 
   useEffect(() => {
@@ -60,16 +74,21 @@ const App: React.FC = () => {
   }, []);
 
   const handleScroll = useCallback(() => {
-    if (feedContainerRef.current) {
+    if (feedContainerRef.current && hasMoreData) {
       const { scrollTop, scrollHeight, clientHeight } = feedContainerRef.current;
       // Fetch more when user is near the bottom of the page
       if (scrollHeight - scrollTop - clientHeight < 500 && !isFetchingMore) {
         loadNews();
       }
     }
-  }, [isFetchingMore, loadNews]);
+  }, [isFetchingMore, loadNews, hasMoreData]);
 
   useEffect(() => {
+    // Only attach scroll listener if there's more data to fetch
+    if (!hasMoreData) {
+      return;
+    }
+    
     const feedElement = feedContainerRef.current;
     if (feedElement) {
       feedElement.addEventListener('scroll', handleScroll);
@@ -79,7 +98,7 @@ const App: React.FC = () => {
         feedElement.removeEventListener('scroll', handleScroll);
       }
     };
-  }, [handleScroll]);
+  }, [handleScroll, hasMoreData]);
 
   return (
     <div className="bg-black h-screen w-screen overflow-hidden font-sans text-zinc-100">
@@ -98,9 +117,11 @@ const App: React.FC = () => {
           className="h-full w-full overflow-y-auto pt-20 pb-12"
         >
           <div className="max-w-xl mx-auto px-4 space-y-8">
-            {newsFeed.map((item) => (
-              <NewsPost key={item.id} item={item} />
-            ))}
+            {newsFeed
+              .filter(item => item.imageUrl && item.imageUrl.trim() !== '')
+              .map((item) => (
+                <NewsPost key={item.id} item={item} />
+              ))}
             {isFetchingMore && (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
