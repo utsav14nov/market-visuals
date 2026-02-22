@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     NewsItem
 } from '../types';
@@ -8,6 +9,18 @@ const NewsPost: React.FC < {
 } > = ({
     item
 }) => {
+    const [isFullScreen, setIsFullScreen] = useState(false);
+
+    useEffect(() => {
+        if (isFullScreen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [isFullScreen]);
 
     const getSentimentClass = (sentiment: string) => {
         switch (sentiment) {
@@ -20,11 +33,18 @@ const NewsPost: React.FC < {
         }
     };
 
-
     return (
+        <>
         <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 shadow-lg">
-            { /* Image Section - Square aspect for maximum mobile display */ }
-            <div className="aspect-square w-full relative bg-zinc-800 overflow-hidden">
+            { /* Image Section - Square aspect for maximum mobile display, tappable for full screen */ }
+            <div
+                role="button"
+                tabIndex={0}
+                onClick={() => item.imageUrl && setIsFullScreen(true)}
+                onKeyDown={(e) => item.imageUrl && (e.key === 'Enter' || e.key === ' ') && setIsFullScreen(true)}
+                aria-label="View post full screen"
+                className="aspect-square w-full relative bg-zinc-800 overflow-hidden cursor-pointer active:opacity-95"
+            >
                 {item.imageIsLoading && (
                     <div className="absolute inset-0 w-full h-full bg-zinc-800 animate-pulse"></div>
                 )}
@@ -33,6 +53,7 @@ const NewsPost: React.FC < {
                         src={item.imageUrl}
                         alt={item.headline}
                         className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${!item.imageIsLoading ? 'opacity-100' : 'opacity-0'}`}
+                        draggable={false}
                     />
                 )}
             </div>
@@ -79,6 +100,66 @@ const NewsPost: React.FC < {
                 </div>
             </div>
         </div>
+
+        { /* Full-screen overlay via portal - covers entire screen including header */ }
+        {isFullScreen && createPortal(
+            <div
+                className="fixed inset-0 bg-black flex flex-col"
+                style={{ height: '100dvh', maxHeight: '100dvh', zIndex: 9999, top: 0, left: 0, right: 0, bottom: 0 }}
+            >
+                <button
+                    type="button"
+                    onClick={() => setIsFullScreen(false)}
+                    aria-label="Close full screen"
+                    className="absolute top-3 right-3 z-10 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+
+                <div
+                    className="flex-1 min-h-0 flex flex-col overflow-hidden"
+                    onClick={(e) => e.target === e.currentTarget && setIsFullScreen(false)}
+                >
+                    { /* Image takes most of the screen */ }
+                    {item.imageUrl && (
+                        <div className="flex-1 min-h-0 flex items-center justify-center bg-black py-2">
+                            <img
+                                src={item.imageUrl}
+                                alt={item.headline}
+                                className="w-full h-full object-contain"
+                                style={{ maxHeight: '85dvh' }}
+                                draggable={false}
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </div>
+                    )}
+                    { /* Compact content strip at bottom */ }
+                    <div className="flex-shrink-0 px-3 py-2 pb-4 bg-black border-t border-zinc-800 text-zinc-100">
+                        <p className="text-[10px] text-zinc-500 mb-0.5">{item.ticker}</p>
+                        <h2 className="text-sm font-bold leading-tight mb-1.5 line-clamp-2">
+                            {item.headline}
+                        </h2>
+                        <div className="flex items-center justify-between gap-2">
+                            <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${getSentimentClass(item.sentiment)}`}>
+                                {item.sentiment.toUpperCase()}: {(item.sentimentScore * 100).toFixed(0)}%
+                            </span>
+                            <a
+                                href={item.sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-green-400 hover:text-green-300 transition-colors"
+                            >
+                                Read Article →
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )}
+        </>
     );
 };
 
